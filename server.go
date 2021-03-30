@@ -23,7 +23,7 @@ func sendMessage(server *sse.Server) http.HandlerFunc {
 func main() {
   server := sse.New()
   server.CreateStream("messages")
-  server.AutoReplay = true
+  server.AutoReplay = false
 
   mux := goji.NewMux()
   mux.HandleFunc(pat.Get("/events"), server.HTTPHandler)
