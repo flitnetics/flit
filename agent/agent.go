@@ -3,24 +3,37 @@ package main
 import (
         "github.com/r3labs/sse/v2"
         "fmt"
-	"context"
-	"io"
-	"os"
+        "time"
+	_ "context"
+	_ "io"
+	_ "os"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
+	_ "github.com/docker/docker/api/types"
+	_ "github.com/docker/docker/api/types/container"
+	_ "github.com/docker/docker/client"
+	_ "github.com/docker/docker/pkg/stdcopy"
 )
+
+
+func handleSSE(data string) {
+    fmt.Println(data)
+}
 
 func main() {
   sseClient := sse.NewClient("http://localhost:8080/events")
+  sseClient.EncodingBase64 = true
+
+  fmt.Println("Waiting for events...")
+
+  sseClient.ReconnectNotify = func(err error, backoff time.Duration) {
+	fmt.Println("Reconnecting", err, backoff)
+  }
 
   sseClient.Subscribe("messages", func(msg *sse.Event) {
     // Got some data!
     fmt.Println(string(msg.Data))
 
-    ctx := context.Background()
+    /* ctx := context.Background()
     cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
     if err != nil {
       panic(err)
@@ -59,6 +72,8 @@ func main() {
 	panic(err)
     }
  
-    stdcopy.StdCopy(os.Stdout, os.Stderr, out)
+    stdcopy.StdCopy(os.Stdout, os.Stderr, out) */
+
   }) 
+
 }
