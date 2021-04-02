@@ -32,6 +32,7 @@ require (
 	github.com/gorilla/mux v1.7.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/go-version v1.1.0 // indirect
+	github.com/jinzhu/configor v1.2.1
 	github.com/jinzhu/gorm v1.9.11 // indirect
 	github.com/johntdyer/slack-go v0.0.0-20180213144715-95fac1160b22 // indirect
 	github.com/johntdyer/slackrus v0.0.0-20180518184837-f7aae3243a07
@@ -45,7 +46,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/opencontainers/runc v0.1.1 // indirect
 	github.com/prometheus/client_golang v0.9.3
-	github.com/r3labs/sse/v2 v2.3.2 // indirect
+	github.com/r3labs/sse/v2 v2.3.2
 	github.com/robfig/cron v0.0.0-20180505203441-b41be1df6967
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.7

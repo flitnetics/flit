@@ -16,7 +16,6 @@ import (
 // any of the images, the associated containers are stopped and restarted with
 // the new image.
 func Update(client container.Client, params types.UpdateParams) (*metrics2.Metric, error) {
-
 	log.Debug("Checking containers for updated images")
 	metric := &metrics2.Metric{}
 	staleCount := 0
@@ -43,13 +42,12 @@ func Update(client container.Client, params types.UpdateParams) (*metrics2.Metri
 			staleCheckFailed++
 			metric.Failed++
 		}
-	 	containers[i].Stale = stale
+		containers[i].Stale = stale
 
 		if stale {
 			staleCount++
 		}
 	}
-        log.Println(string(containers))
 
 	containers, err = sorter.SortByDependencies(containers)
 	metric.Scanned = len(containers)

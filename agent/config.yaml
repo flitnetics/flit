@@ -1,0 +1,3 @@
+client:
+        master_url: "http://localhost:8080/events"
+        location_id: "kd01"
