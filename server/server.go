@@ -4,13 +4,15 @@ import (
   "log"
   "context"
   "encoding/json"
+  "io/ioutil"
   "time"
-  "fmt"
+  _ "fmt"
   "github.com/r3labs/sse/v2"
   "net/http"
   "goji.io"
   "goji.io/pat"
   "github.com/go-redis/redis/v8"
+  "github.com/jinzhu/configor"
 )
 
 /*
@@ -26,11 +28,19 @@ func sendMessage(server *sse.Server) http.HandlerFunc {
   }
 } */
 
+var Config = struct {
+        Redis_Host string `required:"true"`
+}{}
+
 func sendPubSub(w http.ResponseWriter, r *http.Request) {
+        if err := configor.Load(&Config, "config.yaml"); err != nil {
+                panic(err)
+        }
+
         data := pat.Param(r, "name")
 
         redisClient := redis.NewClient(&redis.Options{
-                Addr:     "localhost:6379",  // We connect to host redis, thats what the hostname of the redis service is set to in the docker-compose
+                Addr:     Config.Redis_Host,  // We connect to host redis, thats what the hostname of the redis service is set to in the docker-compose
                 Password: "", // The password IF set in the redis Config file
                 DB:       0,
         })
@@ -50,8 +60,38 @@ func sendPubSub(w http.ResponseWriter, r *http.Request) {
         redisClient.Publish(ctx, "new_users", data).Err()
 }
 
-func sendMessage2(server *sse.Server, data string) {
-    log.Println("sendMessage2 function %s", data)
+func sendPubSub2(w http.ResponseWriter, r *http.Request) {
+        if err := configor.Load(&Config, "config.yaml"); err != nil {
+                panic(err)
+        }
+     
+        redisClient := redis.NewClient(&redis.Options{
+                Addr:     Config.Redis_Host,  // We connect to host redis, thats what the hostname of the redis service is set to in the docker-compose
+                Password: "", // The password IF set in the redis Config file
+                DB:       0,
+        })
+
+        bodyBytes, _ := ioutil.ReadAll(r.Body)
+        bodyString := string(bodyBytes)
+
+        err := redisClient.Ping(context.Background()).Err()
+        if err != nil {
+                // Sleep for 3 seconds and wait for Redis to initialize
+                time.Sleep(3 * time.Second)
+                err := redisClient.Ping(context.Background()).Err()
+                if err != nil {
+                        panic(err)
+                }
+        }
+        // Generate a new background context that  we will use
+        ctx := context.Background()
+
+        redisClient.Publish(ctx, "new_users", bodyString).Err()
+}
+
+
+func sendMessage(server *sse.Server, data string) {
+    log.Println("message: %s", data)
 
     server.Publish("messages", &sse.Event{
       Data: []byte(data),
@@ -66,6 +106,8 @@ func main() {
   mux := goji.NewMux()
   mux.HandleFunc(pat.Get("/events"), server.HTTPHandler)
   mux.HandleFunc(pat.Get("/send/:name"), sendPubSub)
+  mux.HandleFunc(pat.Post("/update"), sendPubSub2)
+  mux.HandleFunc(pat.Post("/ping"), sendPubSub2)
 
   go func() {
 	// Create a new Redis Client
@@ -99,8 +141,7 @@ func main() {
 			panic(err)
 		} */
 
-		fmt.Println(string(msg.Payload)) 
-                sendMessage2(server, string(msg.Payload))
+                sendMessage(server, string(msg.Payload))
 	}
   }()
 

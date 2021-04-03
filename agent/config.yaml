@@ -1,3 +1,5 @@
 client:
         master_url: "http://localhost:8080/events"
         location_id: "kd01"
+        enable_ui: true
+        ui_url: "http://localhost:3000"

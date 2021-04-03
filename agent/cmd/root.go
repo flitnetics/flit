@@ -8,11 +8,16 @@ import (
 	"strings"
 	_ "syscall"
 	"time"
+        "encoding/json"
+        "bytes"
+        "net/http"
+        "fmt"
 
         "github.com/r3labs/sse/v2"
         "github.com/jinzhu/configor"
 	apiMetrics "github.com/containrrr/watchtower/pkg/api/metrics"
 	"github.com/containrrr/watchtower/pkg/api/update"
+        "github.com/gojektech/heimdall/v6/httpclient"
 
 	"github.com/containrrr/watchtower/internal/actions"
 	"github.com/containrrr/watchtower/internal/flags"
@@ -48,8 +53,20 @@ var Config = struct {
 	Client struct {
 		Location_Id     string `default:"all"`
                 Master_Url      string `required:"true"`
+                Ui_Url          string `default:"localhost"`
+                Enable_Ui       bool   `default:"false"`  
 	}
 }{}
+
+type Payload struct {
+      Action string `json:"action"`
+      LocationId string `json:"locationId"`
+      Image []actions.Image `json:"images,omitempty"`
+}
+
+type Agent struct {
+   Payload Payload `json:"agent"`
+}
 
 var rootCmd = NewRootCommand()
 
@@ -265,6 +282,15 @@ func runUpdates(client container.Client, updateParams t.UpdateParams) {
         }
 }
 
+func runList() []actions.Image {
+        containers, err := actions.List()
+        if err != nil {
+                 log.Println(err)
+        }
+
+        return containers
+}
+
 func listenSSE(filter t.Filter) {
         if err := configor.Load(&Config, "config.yaml"); err != nil {
                 panic(err)
@@ -286,9 +312,32 @@ func listenSSE(filter t.Filter) {
 
                 message := string(msg.Data)
                 location := Config.Client.Location_Id 
+                ui := Config.Client.Enable_Ui
+
+                payload := Payload{}
+                json.Unmarshal([]byte(message), &payload)
+                //log.Println(payload)
                 
-                if (message == location || location == "all") {
+                if (payload.LocationId == location && payload.Action == "update" || location == "all") {
                         runUpdates(client, updateParams)
+                }
+
+                if (ui == true && payload.LocationId == location && payload.Action == "ping" || location == "all") {
+                        images := runList()
+
+                        timeout := 1000 * time.Millisecond
+                        client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
+                        mapD := Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images}}
+                        mapB, _ := json.Marshal(mapD)
+                        headers := http.Header{}
+                        headers.Set("Content-Type", "application/json")
+                        body := bytes.NewReader([]byte(string(mapB)))
+
+                       // Use the clients GET method to create and execute the request
+                       _, err := client.Post(fmt.Sprintf("%s/api/v1/agents/pong", Config.Client.Ui_Url), body, headers)
+                       if err != nil{
+                               log.Error(err)
+                        }               
                 }
         })
 }
