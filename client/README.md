@@ -1,0 +1,5 @@
+# Trying it out
+1. Make sure you are running the master (in /server folder)
+2. Make ~/.hub folder
+3. Copy config.yaml to ~/.hub folder
+4. run `go run client.go <command> <locationid`, example: `go run client.go ping kd01` 
