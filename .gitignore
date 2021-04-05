@@ -1,4 +1,5 @@
 client/hubctl
 client/flitctl
+client/client
 *.swp
 *.swo

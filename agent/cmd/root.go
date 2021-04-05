@@ -62,6 +62,7 @@ type Payload struct {
       Action string `json:"action"`
       LocationId string `json:"locationId"`
       Image []actions.Image `json:"images,omitempty"`
+      ImageError string `json:"error"`
 }
 
 type Agent struct {
@@ -316,7 +317,6 @@ func listenSSE(filter t.Filter) {
 
                 payload := Payload{}
                 json.Unmarshal([]byte(message), &payload)
-                //log.Println(payload)
                 
                 if (payload.LocationId == location && payload.Action == "update" || location == "all") {
                         runUpdates(client, updateParams)
@@ -327,8 +327,17 @@ func listenSSE(filter t.Filter) {
 
                         timeout := 1000 * time.Millisecond
                         client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
-                        mapD := Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images}}
-                        mapB, _ := json.Marshal(mapD)
+  
+                        var mapD Agent
+                        var mapB []byte
+                        mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, ImageError: "Containers are not running"}}
+                        mapB, _ = json.Marshal(mapD)
+
+                        if (images != nil) {
+                                mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images}}
+                                mapB, _ = json.Marshal(mapD)
+                        }
+
                         headers := http.Header{}
                         headers.Set("Content-Type", "application/json")
                         body := bytes.NewReader([]byte(string(mapB)))

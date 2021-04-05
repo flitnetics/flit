@@ -9,6 +9,7 @@ import (
   "fmt"
   "github.com/jinzhu/configor"
   "net/http"
+  "os/user"
 )
 
 var Config = struct {
@@ -18,7 +19,13 @@ var Config = struct {
 func main() {
         timeout := 1000 * time.Millisecond
         client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
-        if err := configor.Load(&Config, "config.yaml"); err != nil {
+
+        usr, err := user.Current()
+        if err != nil {
+            panic(err)
+        }
+
+        if err := configor.Load(&Config, fmt.Sprintf("%s/.hub/config.yaml", usr.HomeDir)); err != nil {
                 panic(err)
         }
 
