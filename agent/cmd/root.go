@@ -292,10 +292,27 @@ func runList() []actions.Image {
         return containers
 }
 
+func sendToUI(json []byte) {
+                timeout := 1000 * time.Millisecond
+                client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
+
+                headers := http.Header{}
+                headers.Set("Content-Type", "application/json")
+                body := bytes.NewReader([]byte(string(json)))
+
+                // Use the clients GET method to create and execute the request
+                _, err := client.Post(fmt.Sprintf("%s/api/v1/agents/pong", Config.Client.Ui_Url), body, headers)
+                if err != nil{
+                       log.Error(err)
+                }
+
+}
+
 func listenSSE(filter t.Filter) {
         if err := configor.Load(&Config, "config.yaml"); err != nil {
                 panic(err)
         }
+
         configor.Load(&Config, "config.yaml")
         sseClient := sse.NewClient(Config.Client.Master_Url)
         sseClient.EncodingBase64 = true
@@ -318,16 +335,13 @@ func listenSSE(filter t.Filter) {
                 payload := Payload{}
                 json.Unmarshal([]byte(message), &payload)
                 
-                if (payload.LocationId == location && payload.Action == "update" || location == "all") {
+                if (payload.LocationId == location || location == "all" && payload.Action == "update") {
                         runUpdates(client, updateParams)
                 }
 
-                if (ui == true && payload.LocationId == location && payload.Action == "ping" || location == "all") {
+                if (payload.LocationId == location || location == "all" && payload.Action == "ping") {
                         images := runList()
 
-                        timeout := 1000 * time.Millisecond
-                        client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
-  
                         var mapD Agent
                         var mapB []byte
                         mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, ImageError: "Containers are not running"}}
@@ -338,15 +352,9 @@ func listenSSE(filter t.Filter) {
                                 mapB, _ = json.Marshal(mapD)
                         }
 
-                        headers := http.Header{}
-                        headers.Set("Content-Type", "application/json")
-                        body := bytes.NewReader([]byte(string(mapB)))
-
-                       // Use the clients GET method to create and execute the request
-                       _, err := client.Post(fmt.Sprintf("%s/api/v1/agents/pong", Config.Client.Ui_Url), body, headers)
-                       if err != nil{
-                               log.Error(err)
-                        }               
+                        if (ui == true) {
+                                sendToUI(mapB)
+                        }
                 }
         })
 }
