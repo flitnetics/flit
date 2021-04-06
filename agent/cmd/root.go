@@ -63,6 +63,7 @@ type Payload struct {
       LocationId string `json:"locationId"`
       Image []actions.Image `json:"images,omitempty"`
       ImageError string `json:"error"`
+      Logs []byte `json:"logs,omitempty"`
 }
 
 type Agent struct {
@@ -292,6 +293,15 @@ func runList() []actions.Image {
         return containers
 }
 
+func runLogs() []byte {
+        containers, err := actions.Logs()
+        if err != nil {
+                 log.Println(err)
+        }
+
+        return containers
+}
+
 func sendToUI(json []byte) {
                 timeout := 1000 * time.Millisecond
                 client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
@@ -351,6 +361,17 @@ func listenSSE(filter t.Filter) {
                                 mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images}}
                                 mapB, _ = json.Marshal(mapD)
                         }
+
+                        if (ui == true) {
+                                sendToUI(mapB)
+                        }
+                }
+
+                if (payload.LocationId == location || location == "all" && payload.Action == "logs") {
+                        logs := runLogs()
+
+                        mapD := Agent{Payload: Payload{Action: "logs", LocationId: location, Logs: logs}}
+                        mapB, _ := json.Marshal(mapD)
 
                         if (ui == true) {
                                 sendToUI(mapB)
