@@ -8,7 +8,12 @@ import (
 	"github.com/docker/docker/client"
 )
 
-func Logs() ([]byte, error) {
+type LoggingInfo struct {
+  Name string `json:"container_name"`
+  Log string `json:"log"`
+}
+
+func Logs() ([]LoggingInfo, error) {
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
@@ -21,16 +26,21 @@ func Logs() ([]byte, error) {
 		panic(err)
 	}
 
-        var logs []byte
+        var logs []LoggingInfo
 	for _, container := range containers {
                 out, err := cli.ContainerLogs(ctx, container.ID, options)
                 if err != nil {
                         panic(err)
                 }
-                logs, err = ioutil.ReadAll(out)
+
+                logData, err := ioutil.ReadAll(out)
+
+                containerInfo := LoggingInfo{Name: container.Image, Log: string(logData)}
+                logs = append(logs, containerInfo) // append as string
                 if err != nil {
                         panic(err)
                 }
+                
 	}
 
         return logs, nil

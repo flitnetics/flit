@@ -62,8 +62,8 @@ type Payload struct {
       Action string `json:"action"`
       LocationId string `json:"locationId"`
       Image []actions.Image `json:"images,omitempty"`
-      ImageError string `json:"error"`
-      Logs []byte `json:"logs,omitempty"`
+      ImageError string `json:"error,omitempty"`
+      LoggingInfo []actions.LoggingInfo `json:"logs,omitempty"`
 }
 
 type Agent struct {
@@ -293,7 +293,7 @@ func runList() []actions.Image {
         return containers
 }
 
-func runLogs() []byte {
+func runLogs() []actions.LoggingInfo {
         containers, err := actions.Logs()
         if err != nil {
                  log.Println(err)
@@ -302,7 +302,7 @@ func runLogs() []byte {
         return containers
 }
 
-func sendToUI(json []byte) {
+func sendToUI(json []byte, endpoint string) {
                 timeout := 1000 * time.Millisecond
                 client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
 
@@ -311,7 +311,7 @@ func sendToUI(json []byte) {
                 body := bytes.NewReader([]byte(string(json)))
 
                 // Use the clients GET method to create and execute the request
-                _, err := client.Post(fmt.Sprintf("%s/api/v1/agents/pong", Config.Client.Ui_Url), body, headers)
+                _, err := client.Post(fmt.Sprintf("%s/api/v1/agents/%s", Config.Client.Ui_Url, endpoint), body, headers)
                 if err != nil{
                        log.Error(err)
                 }
@@ -345,12 +345,13 @@ func listenSSE(filter t.Filter) {
                 payload := Payload{}
                 json.Unmarshal([]byte(message), &payload)
                 
-                if (payload.LocationId == location || location == "all" && payload.Action == "update") {
+                if ((payload.LocationId == location || location == "all") && payload.Action == "update") {
                         runUpdates(client, updateParams)
                 }
 
-                if (payload.LocationId == location || location == "all" && payload.Action == "ping") {
+                if ((payload.LocationId == location || location == "all") && payload.Action == "ping") {
                         images := runList()
+                        logs := runLogs()
 
                         var mapD Agent
                         var mapB []byte
@@ -358,23 +359,12 @@ func listenSSE(filter t.Filter) {
                         mapB, _ = json.Marshal(mapD)
 
                         if (images != nil) {
-                                mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images}}
+                                mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images, LoggingInfo: logs}}
                                 mapB, _ = json.Marshal(mapD)
                         }
 
                         if (ui == true) {
-                                sendToUI(mapB)
-                        }
-                }
-
-                if (payload.LocationId == location || location == "all" && payload.Action == "logs") {
-                        logs := runLogs()
-
-                        mapD := Agent{Payload: Payload{Action: "logs", LocationId: location, Logs: logs}}
-                        mapB, _ := json.Marshal(mapD)
-
-                        if (ui == true) {
-                                sendToUI(mapB)
+                                sendToUI(mapB, "pong")
                         }
                 }
         })
