@@ -65,7 +65,7 @@ func main() {
         panic(err)
     }
 
-    if err := configor.Load(&Config, fmt.Sprintf("%s/.hub/config.yaml", usr.HomeDir)); err != nil {
+    if err := configor.Load(&Config, fmt.Sprintf("%s/.flit/config.yaml", usr.HomeDir)); err != nil {
             panic(err)
     }
 
