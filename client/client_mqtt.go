@@ -13,26 +13,19 @@ import (
 )
 
 var Config = struct {
-        Master_Url string `required:"true"`
         Organization string `required:"true"`
+	Broker       string `required:"true"`
+	Port         int    `reqiured:"True"`
 }{}
 
 var res map[string]interface{}
 
 func publish(client mqtt.Client, body []byte, remoteClient string, org string) {
-    num := 10
-    for i := 0; i < num; i++ {
-        //text := fmt.Sprintf("Hello Zaihan Number %d", i)
         text := string(body)
-        fmt.Println("Publishing!")
+        fmt.Println(fmt.Sprintf("Publishing %s on topic %s/%s", string(body), org, remoteClient))
         token := client.Publish(fmt.Sprintf("%s/%s", org, remoteClient), 0, false, text)
         token.Wait()
         time.Sleep(time.Second)
-    }
-}
-
-var messagePubHandler mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-    fmt.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
 }
 
 var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
@@ -43,19 +36,7 @@ var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err
     fmt.Printf("Connect lost: %v", err)
 }
 
-func mainLogic() ([]byte, string, string) {
-        usr, err := user.Current()
-        if err != nil {
-            panic(err)
-        }
-
-        if err := configor.Load(&Config, fmt.Sprintf("%s/.hub/config.yaml", usr.HomeDir)); err != nil {
-                panic(err)
-        }
-
-        // topic organization
-        organization := Config.Organization
-
+func sendCommands() ([]byte, string) {
         // arguments
         action := os.Args[1]
         remoteClient := os.Args[2]
@@ -67,24 +48,37 @@ func mainLogic() ([]byte, string, string) {
                mapD := map[string]string{"action": "update", "locationId": remoteClient}
                body, _ := json.Marshal(mapD)
 
-               return body, remoteClient, organization
+               return body, remoteClient
         } else if (action == "ping" && remoteClient != "") {
                mapD := map[string]string{"action": "ping", "locationId": remoteClient}
                body, _ := json.Marshal(mapD)
 
-               return body, remoteClient, organization
+               return body, remoteClient
         }
 
-        return nil, remoteClient, organization
+        return nil, remoteClient
 }
 
 func main() {
-    var broker = "broker.emqx.io"
-    var port = 1883
+    usr, err := user.Current()
+    if err != nil {
+        panic(err)
+    }
+
+    if err := configor.Load(&Config, fmt.Sprintf("%s/.hub/config.yaml", usr.HomeDir)); err != nil {
+            panic(err)
+    }
+
+    // topic organization
+    organization := Config.Organization
+    // broker hostname
+    broker := Config.Broker
+    // broker port (eg. 1883)
+    port := Config.Port
+
     opts := mqtt.NewClientOptions()
     opts.AddBroker(fmt.Sprintf("tcp://%s:%d", broker, port))
     opts.SetClientID(uuid.New().String())
-//    opts.SetDefaultPublishHandler(messagePubHandler)
     opts.SetUsername("emqx")
     opts.SetPassword("public")
     opts.OnConnect = connectHandler
@@ -93,9 +87,9 @@ func main() {
     if token := client.Connect(); token.Wait() && token.Error() != nil {
         panic(token.Error())
     }
-
-    body, remoteClient, org := mainLogic()
-    publish(client, body, remoteClient, org)
+    
+    body, remoteClient := sendCommands()
+    publish(client, body, remoteClient, organization)
 
     client.Disconnect(250)
 }
