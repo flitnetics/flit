@@ -3,3 +3,4 @@ client:
         location_id: "kd01"
         enable_ui: true
         ui_url: "http://localhost:3000"
+        organization: "yourorganization"
