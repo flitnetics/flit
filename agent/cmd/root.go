@@ -3,17 +3,16 @@ package cmd
 import (
 	"math"
 	"os"
-	_ "os/signal"
+	"syscall"
+	"os/signal"
 	"strconv"
 	"strings"
-	_ "syscall"
 	"time"
         "encoding/json"
         "bytes"
         "net/http"
         "fmt"
 
-        "github.com/r3labs/sse/v2"
         "github.com/jinzhu/configor"
 	apiMetrics "github.com/containrrr/watchtower/pkg/api/metrics"
 	"github.com/containrrr/watchtower/pkg/api/update"
@@ -29,6 +28,9 @@ import (
 	t "github.com/containrrr/watchtower/pkg/types"
 	_ "github.com/robfig/cron"
 	log "github.com/sirupsen/logrus"
+
+        mqtt "github.com/eclipse/paho.mqtt.golang"
+        "github.com/google/uuid"
 
 	"github.com/spf13/cobra"
 )
@@ -52,9 +54,15 @@ var (
 var Config = struct {
 	Client struct {
 		Location_Id     string `default:"all"`
-                Master_Url      string `required:"true"`
                 Ui_Url          string `default:"localhost"`
-                Enable_Ui       bool   `default:"false"`  
+                Enable_Ui       bool   `default:"false"`
+                Organization    string `required:"true"`
+		Mqtt struct {
+                        Broker          string  `required:"true"`
+                        Port            int  `required:"true"`
+                        Username        string
+                        Password        string
+                }
 	}
 }{}
 
@@ -318,63 +326,46 @@ func sendToUI(json []byte, endpoint string) {
 
 }
 
-func listenSSE(filter t.Filter) {
-        if err := configor.Load(&Config, "config.yaml"); err != nil {
-                panic(err)
-        }
+func listenMqtt(filter t.Filter) {
+    if err := configor.Load(&Config, "config.yaml"); err != nil {
+            panic(err)
+    }
 
-        configor.Load(&Config, "config.yaml")
-        sseClient := sse.NewClient(Config.Client.Master_Url)
-        sseClient.EncodingBase64 = true
+    configor.Load(&Config, "config.yaml")
 
-        sseClient.Subscribe("messages", func(msg *sse.Event) {
-                updateParams := t.UpdateParams{
-                        Filter:         filter,
-                        Cleanup:        cleanup,
-                        NoRestart:      noRestart,
-                        Timeout:        timeout,
-                        MonitorOnly:    monitorOnly,
-                        LifecycleHooks: lifecycleHooks,
-                        RollingRestart: rollingRestart,
-                }
+    fmt.Println(fmt.Sprintf("broker: %s", Config.Client.Mqtt.Broker))
+    fmt.Println(fmt.Sprintf("port: %d", Config.Client.Mqtt.Port))
 
-                message := string(msg.Data)
-                location := Config.Client.Location_Id 
-                ui := Config.Client.Enable_Ui
+    opts := mqtt.NewClientOptions()
+    opts.AddBroker(fmt.Sprintf("tcp://%s:%d", Config.Client.Mqtt.Broker, Config.Client.Mqtt.Port))
+    opts.SetClientID(uuid.New().String())
+    opts.SetDefaultPublishHandler(messagePubHandler(filter)) // needed for subscriber
+    opts.SetUsername(Config.Client.Mqtt.Username)
+    opts.SetPassword(Config.Client.Mqtt.Password)
+    opts.OnConnect = connectHandler
+    opts.OnConnectionLost = connectLostHandler
+    client := mqtt.NewClient(opts)
+    if token := client.Connect(); token.Wait() && token.Error() != nil {
+        panic(token.Error())
 
-                payload := Payload{}
-                json.Unmarshal([]byte(message), &payload)
-                
-                if ((payload.LocationId == location || location == "all") && payload.Action == "update") {
-                        runUpdates(client, updateParams)
-                }
+    }
 
-                if ((payload.LocationId == location || location == "all") && payload.Action == "ping") {
-                        images := runList()
-                        logs := runLogs()
-
-                        var mapD Agent
-                        var mapB []byte
-                        mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, ImageError: "Containers are not running"}}
-                        mapB, _ = json.Marshal(mapD)
-
-                        if (images != nil) {
-                                mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images, LoggingInfo: logs}}
-                                mapB, _ = json.Marshal(mapD)
-                        }
-
-                        if (ui == true) {
-                                sendToUI(mapB, "pong")
-                        }
-                }
-        })
+    // subscribe (listen) to MQTT
+    sub(client)
 }
 
 func runUpgradesOnSchedule(c *cobra.Command, filter t.Filter, filtering string) error {
+	// keepalive code to ensure mqtt do not exit after running
+        keepAlive := make(chan os.Signal)
+        signal.Notify(keepAlive, os.Interrupt, syscall.SIGTERM)
+
         t := time.Date(0001, 1, 1, 00, 00, 00, 00, time.UTC) // need cleanup removal of this
         writeStartupMessage(c, t, filtering)
 
-	listenSSE(filter)
+        // listen for MQTT traffic
+        listenMqtt(filter)
+
+        <-keepAlive
 	return nil
 }
 
@@ -395,4 +386,86 @@ func runUpdatesWithNotifications(filter t.Filter) *metrics.Metric {
 	}
 	notifier.SendNotification()
 	return metricResults
+}
+
+func messagePubHandler(filter t.Filter) func(mqtt.Client, mqtt.Message) {
+    //fmt.Printf("Received message: %s from topic: %s\n", msg.Payload(), msg.Topic())
+
+    return func(client mqtt.Client, msg mqtt.Message) {
+            processMsg(msg, filter)
+    }
+}
+
+var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
+    fmt.Println("Connected")
+}
+
+var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
+    fmt.Printf("Connect lost: %v", err)
+}
+
+// we process what we need to do, updates or ping
+func processMsg(msg mqtt.Message, filter t.Filter) {
+    if err := configor.Load(&Config, "config.yaml"); err != nil {
+            panic(err)
+    }
+
+    configor.Load(&Config, "config.yaml")
+
+    updateParams := t.UpdateParams{
+    //        Filter:         filter,
+            Cleanup:        cleanup,
+            NoRestart:      noRestart,
+            Timeout:        timeout,
+            MonitorOnly:    monitorOnly,
+            LifecycleHooks: lifecycleHooks,
+            RollingRestart: rollingRestart,
+    }
+
+    message := string(msg.Payload())
+    // location Id
+    location := Config.Client.Location_Id
+    // Web UI Config
+    ui := Config.Client.Enable_Ui
+
+    payload := Payload{}
+    json.Unmarshal([]byte(message), &payload)
+
+    // "update image" action
+    if ((payload.LocationId == location || location == "all") && payload.Action == "update") {
+            runUpdates(client, updateParams)
+    }
+
+    // "ping" action
+    if ((payload.LocationId == location || location == "all") && payload.Action == "ping") {
+            images := runList()
+            logs := runLogs()
+
+            var mapD Agent
+            var mapB []byte
+            mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, ImageError: "Containers are not running"}}
+            mapB, _ = json.Marshal(mapD)
+ 
+            // if there are no container images
+            if (images != nil) {
+                    mapD = Agent{Payload: Payload{Action: "pong", LocationId: location, Image: images, LoggingInfo: logs}}
+                    mapB, _ = json.Marshal(mapD)
+            }
+
+            // if we enable the UI
+            if (ui == true) {
+                   sendToUI(mapB, "pong")
+            }
+    }
+
+    fmt.Println(payload.Action)
+}
+
+func sub(client mqtt.Client) {
+    configor.Load(&Config, "config.yaml")
+
+    topic := fmt.Sprintf("%s/%s", Config.Client.Organization, Config.Client.Location_Id)
+    token := client.Subscribe(topic, 1, nil)
+    token.Wait()
+    fmt.Printf("Subscribed to topic: %s\n", topic)
 }

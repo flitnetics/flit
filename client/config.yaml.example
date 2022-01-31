@@ -1,0 +1,3 @@
+organization: yourorganization
+broker: broker.emqx.io
+port: 1883

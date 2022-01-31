@@ -1,0 +1,10 @@
+client:
+        location_id: kd01
+        enable_ui: true
+        ui_url: http://localhost:3000
+        organization: myorganization
+        mqtt:
+          broker: broker.emqx.io
+          username: emqx
+          password: public
+          port: 1883

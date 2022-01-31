@@ -11,9 +11,11 @@ require (
 	github.com/docker/docker v20.10.5+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
+	github.com/eclipse/paho.mqtt.golang v1.3.5 // indirect
 	github.com/go-redis/redis/v8 v8.8.0
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/gojektech/heimdall/v6 v6.1.0
+	github.com/google/uuid v1.3.0 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/jinzhu/configor v1.2.1
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
