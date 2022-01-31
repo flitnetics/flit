@@ -1,63 +1,95 @@
 package main
 
 import (
-  "encoding/json"
-  "bytes"
-  "time"
-  "github.com/gojektech/heimdall/v6/httpclient"
-  "os"
-  "fmt"
-  "github.com/jinzhu/configor"
-  "net/http"
-  "os/user"
+        mqtt "github.com/eclipse/paho.mqtt.golang"
+        "time"
+        "fmt"
+        "github.com/google/uuid"
+
+        "os"
+        "github.com/jinzhu/configor"
+        "os/user"
+        "encoding/json"
 )
 
 var Config = struct {
-        Master_Url string `required:"true"`
+        Organization string `required:"true"`
+	Broker       string `required:"true"`
+	Port         int    `reqiured:"True"`
 }{}
 
-func main() {
-        timeout := 1000 * time.Millisecond
-        client := httpclient.NewClient(httpclient.WithHTTPTimeout(timeout))
+var res map[string]interface{}
 
-        usr, err := user.Current()
-        if err != nil {
-            panic(err)
-        }
+func publish(client mqtt.Client, body []byte, remoteClient string, org string) {
+        text := string(body)
+        fmt.Println(fmt.Sprintf("Publishing %s on topic %s/%s", string(body), org, remoteClient))
+        token := client.Publish(fmt.Sprintf("%s/%s", org, remoteClient), 0, false, text)
+        token.Wait()
+        time.Sleep(time.Second)
+}
 
-        if err := configor.Load(&Config, fmt.Sprintf("%s/.hub/config.yaml", usr.HomeDir)); err != nil {
-                panic(err)
-        }
+var connectHandler mqtt.OnConnectHandler = func(client mqtt.Client) {
+    fmt.Println("Connected")
+}
 
+var connectLostHandler mqtt.ConnectionLostHandler = func(client mqtt.Client, err error) {
+    fmt.Printf("Connect lost: %v", err)
+}
+
+func sendCommands() ([]byte, string) {
+        // arguments
         action := os.Args[1]
         remoteClient := os.Args[2]
 
         if (action == "" || remoteClient == "") {
                fmt.Println("Need action, such as 'update'  and Location Id")
         } else if (action == "update" && remoteClient != "") {
-	
-               mapD := map[string]string{"action": "update", "locationId": remoteClient}
-               mapB, _ := json.Marshal(mapD)
-               headers := http.Header{}
-	       headers.Set("Content-Type", "application/json")
-               body := bytes.NewReader([]byte(string(mapB)))
 
-               // Use the clients GET method to create and execute the request
-               _, err := client.Post(fmt.Sprintf("%s/update", Config.Master_Url), body, headers)
-               if err != nil{
-	               panic(err)
-               }
+               mapD := map[string]string{"action": "update", "locationId": remoteClient}
+               body, _ := json.Marshal(mapD)
+
+               return body, remoteClient
         } else if (action == "ping" && remoteClient != "") {
                mapD := map[string]string{"action": "ping", "locationId": remoteClient}
-               mapB, _ := json.Marshal(mapD)
-               headers := http.Header{}
-               headers.Set("Content-Type", "application/json")
-               body := bytes.NewReader([]byte(string(mapB)))
+               body, _ := json.Marshal(mapD)
 
-               // Use the clients GET method to create and execute the request
-               _, err := client.Post(fmt.Sprintf("%s/ping", Config.Master_Url), body, headers)
-               if err != nil{
-                       panic(err)
-               }
+               return body, remoteClient
         }
+
+        return nil, remoteClient
+}
+
+func main() {
+    usr, err := user.Current()
+    if err != nil {
+        panic(err)
+    }
+
+    if err := configor.Load(&Config, fmt.Sprintf("%s/.flit/config.yaml", usr.HomeDir)); err != nil {
+            panic(err)
+    }
+
+    // topic organization
+    organization := Config.Organization
+    // broker hostname
+    broker := Config.Broker
+    // broker port (eg. 1883)
+    port := Config.Port
+
+    opts := mqtt.NewClientOptions()
+    opts.AddBroker(fmt.Sprintf("tcp://%s:%d", broker, port))
+    opts.SetClientID(uuid.New().String())
+    opts.SetUsername("emqx")
+    opts.SetPassword("public")
+    opts.OnConnect = connectHandler
+    opts.OnConnectionLost = connectLostHandler
+    client := mqtt.NewClient(opts)
+    if token := client.Connect(); token.Wait() && token.Error() != nil {
+        panic(token.Error())
+    }
+    
+    body, remoteClient := sendCommands()
+    publish(client, body, remoteClient, organization)
+
+    client.Disconnect(250)
 }
