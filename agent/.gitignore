@@ -1,9 +1,0 @@
-watchtower
-vendor
-.glide
-dist
-.idea
-.DS_Store
-/site
-coverage.out
-/config.yaml

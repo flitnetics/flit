@@ -3,3 +3,4 @@ client/flitctl
 client/client
 *.swp
 *.swo
+agent/config.yaml
